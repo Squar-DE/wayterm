@@ -28,6 +28,10 @@ public class WayTerm : Adw.Application {
         var terminal = new Vte.Terminal() {
             scrollback_lines = 1000
         };
+        
+        terminal.child_exited.connect((status) => {
+          window.close();
+        });
 
         // Enable mouse autohide
         terminal.set_mouse_autohide(true);
@@ -76,6 +80,34 @@ public class WayTerm : Adw.Application {
         style_manager.notify["dark"].connect(() => {
             update_terminal_colors(terminal, style_manager);
         });
+        
+        var key_controller = new Gtk.EventControllerKey();
+        key_controller.key_pressed.connect((keyval, keycode, state) => {
+            // Handle Ctrl+Backspace (delete word backwards)
+            if ((state & Gdk.ModifierType.CONTROL_MASK) != 0 && keyval == Gdk.Key.BackSpace) {
+                // Send Ctrl+W sequence (standard terminal delete word backwards)
+                terminal.feed_child("\x17".data);
+                return true;
+            }
+    
+            // Handle Ctrl+C
+            if ((state & Gdk.ModifierType.CONTROL_MASK) != 0 && keyval == Gdk.Key.c) {
+                terminal.feed_child("\x03".data);
+                return true;
+            }
+    
+            // Handle Ctrl+D
+            if ((state & Gdk.ModifierType.CONTROL_MASK) != 0 && keyval == Gdk.Key.d) {
+                terminal.feed_child("\x04".data);
+                return true;
+            }
+    
+            return false;
+        });
+        terminal.add_controller(key_controller);
+        terminal.can_focus = true;
+        terminal.grab_focus();
+
 
         // Wayland environment setup
         var env = Environ.get();
