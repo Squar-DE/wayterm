@@ -2,8 +2,10 @@ using Gtk;
 using Adw;
 using Vte;
 
-public class TerminalTest : Adw.Application {
-    public TerminalTest() {
+public class WayTerm : Adw.Application {
+    private const double FONT_WIDTH_SCALE = 0.55; // Perfect balance for text/icons
+    
+    public WayTerm() {
         Object(application_id: "org.SquarDE.wayterm");
     }
 
@@ -14,48 +16,95 @@ public class TerminalTest : Adw.Application {
             default_height = 600
         };
 
-        // Create header bar
+        // Add custom CSS class to window
+        window.get_style_context().add_class("wayterm-window");
+
+        // Create header bar with controls
         var header = new Adw.HeaderBar() {
             title_widget = new Adw.WindowTitle("WayTerm", "")
         };
-        
-        // Create VTE terminal
+
+        // Create terminal with perfect proportions
         var terminal = new Vte.Terminal() {
-            scrollback_lines = 1000,
+            scrollback_lines = 1000
         };
-        
-        // Set terminal colors to match libadwaita theme
+
+        // Enable mouse autohide
+        terminal.set_mouse_autohide(true);
+
+        // Add custom CSS class to terminal
+        terminal.get_style_context().add_class("wayterm-terminal");
+
+        // Font settings that prevent stretching
+        try {
+            var font = new Pango.FontDescription();
+    
+            string font_family = "monospace"; // Default fallback
+    
+            // Get the user's configured monospace font from system settings
+            try {
+                var settings = new GLib.Settings("org.gnome.desktop.interface");
+                string system_monospace = settings.get_string("monospace-font-name");
+                if (system_monospace != "") {
+                    // Parse the font string to extract family name
+                    var font_desc = Pango.FontDescription.from_string(system_monospace);
+                    string family = font_desc.get_family();
+                    if (family != null && family != "") {
+                      font_family = family + ", Symbols Nerd Font Mono, monospace";
+                    }
+                }
+            } catch (Error e) {
+              // If we can't get system settings, fall back to generic monospace
+              warning("Could not get system monospace font, using default: %s", e.message);
+              font_family = "monospace, Symbols Nerd Font Mono";
+            }
+    
+            font.set_family(font_family);
+            font.set_size(11 * Pango.SCALE);
+            font.set_stretch(Pango.Stretch.SEMI_CONDENSED);
+            terminal.set_font(font);
+        } catch (Error e) {
+          warning("Font error: %s", e.message);
+        }
+        // Cell scaling that maintains proportions
+        terminal.set_cell_height_scale(1.0);
+        terminal.set_cell_width_scale(FONT_WIDTH_SCALE);
+
+        // Libadwaita color management
         var style_manager = Adw.StyleManager.get_default();
         update_terminal_colors(terminal, style_manager);
-        
-        // Connect style change signal
         style_manager.notify["dark"].connect(() => {
             update_terminal_colors(terminal, style_manager);
         });
 
-        // Spawn the user's default shell
+        // Wayland environment setup
+        var env = Environ.get();
+        env = Environ.set_variable(env, "TERM", "xterm-256color");
+        env = Environ.set_variable(env, "COLORTERM", "truecolor");
+        env = Environ.set_variable(env, "GDK_BACKEND", "wayland");
+
+        // Spawn shell (corrected spawn_async call with all required arguments)
         try {
-            string? shell = Environment.get_variable("SHELL");
-            if (shell == null || shell == "") {
-                shell = "/bin/bash"; // fallback
-            }
-            
+            string? shell = Environment.get_variable("SHELL") ?? "/bin/bash";
             string[] argv = { shell };
-            terminal.spawn_sync(
+            terminal.spawn_async(
                 Vte.PtyFlags.DEFAULT,
-                null, // working directory
+                Environment.get_current_dir(),
                 argv,
-                null, // environment
-                SpawnFlags.SEARCH_PATH,
-                null, // child setup
-                null  // child pid
+                env,
+                GLib.SpawnFlags.SEARCH_PATH,
+                null,      // child_setup
+                -1,        // timeout
+                null,      // cancellable
+                null       // callback
             );
         } catch (Error e) {
-            print("Failed to spawn shell: %s\n", e.message);
+            print("Shell error: %s\n", e.message);
         }
 
-        // Create main box with header and terminal
+        // Main layout with Libadwaita styling
         var box = new Gtk.Box(Gtk.Orientation.VERTICAL, 0);
+        box.get_style_context().add_class("wayterm-box");
         box.append(header);
         
         var scrolled = new Gtk.ScrolledWindow() {
@@ -65,6 +114,9 @@ public class TerminalTest : Adw.Application {
         };
         box.append(scrolled);
         
+        // Apply custom CSS
+        load_css();
+        
         window.content = box;
         window.present();
     }
@@ -73,44 +125,44 @@ public class TerminalTest : Adw.Application {
         var background = style_manager.dark ? "#242424" : "#fafafa";
         var foreground = style_manager.dark ? "#ffffff" : "#000000";
         
-        // Create RGBA objects
-        var fg = Gdk.RGBA();
-        fg.parse(foreground);
+        var fg = Gdk.RGBA(); fg.parse(foreground);
+        var bg = Gdk.RGBA(); bg.parse(background);
         
-        var bg = Gdk.RGBA();
-        bg.parse(background);
-        
-        // Create palette
-        Gdk.RGBA[] palette = new Gdk.RGBA[16];
-        
-        palette[0] = create_rgba("#000000");  // black
-        palette[1] = create_rgba("#cc0000");  // red
-        palette[2] = create_rgba("#4e9a06");  // green
-        palette[3] = create_rgba("#c4a000");  // yellow
-        palette[4] = create_rgba("#3465a4");  // blue
-        palette[5] = create_rgba("#75507b");  // magenta
-        palette[6] = create_rgba("#06989a");  // cyan
-        palette[7] = create_rgba("#d3d7cf");  // white
-        palette[8] = create_rgba("#555753");  // bright black
-        palette[9] = create_rgba("#ef2929");  // bright red
-        palette[10] = create_rgba("#8ae234"); // bright green
-        palette[11] = create_rgba("#fce94f"); // bright yellow
-        palette[12] = create_rgba("#729fcf"); // bright blue
-        palette[13] = create_rgba("#ad7fa8"); // bright magenta
-        palette[14] = create_rgba("#34e2e2"); // bright cyan
-        palette[15] = create_rgba("#eeeeec"); // bright white
-        
-        terminal.set_colors(fg, bg, palette);
+        terminal.set_colors(fg, bg, null);
     }
 
-    private Gdk.RGBA create_rgba(string color) {
-        var rgba = Gdk.RGBA();
-        rgba.parse(color);
-        return rgba;
+    private void load_css() {
+        var provider = new Gtk.CssProvider();
+        try {
+            provider.load_from_data((uint8[])"""
+                .wayterm-window {
+                    background-color: @window_bg_color;
+                }
+                .wayterm-terminal {
+                    padding: 12px;
+                    background-color: @terminal_bg_color;
+                }
+                .wayterm-box {
+                    background-color: @window_bg_color;
+                }
+            """);
+            
+            Gtk.StyleContext.add_provider_for_display(
+                Gdk.Display.get_default(),
+                provider,
+                Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+            );
+        } catch (Error e) {
+            warning("Failed to load CSS: %s", e.message);
+        }
     }
 
     public static int main(string[] args) {
-        var app = new TerminalTest();
+        // Force Wayland mode
+        Environment.set_variable("GDK_BACKEND", "wayland", true);
+        Environment.set_variable("VTE_WAYLAND", "1", true);
+        
+        var app = new WayTerm();
         return app.run(args);
     }
 }
