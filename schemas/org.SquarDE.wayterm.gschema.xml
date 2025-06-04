@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.SquarDE.wayterm" path="/org/SquarDE/wayterm/">
+    <key name="window-width" type="i">
+      <default>800</default>
+      <summary>Window width</summary>
+      <description>Default width of the main window</description>
+    </key>
+    <key name="window-height" type="i">
+      <default>600</default>
+      <summary>Window height</summary>
+      <description>Default height of the main window</description>
+    </key>
+    <key name="gpu-acceleration" type="b">
+      <default>true</default>
+      <summary>GPU acceleration</summary>
+      <description>Enable hardware acceleration</description>
+    </key>
+    <key name="vsync" type="b">
+      <default>true</default>
+      <summary>Vertical sync</summary>
+      <description>Enable vertical synchronization</description>
+    </key>
+    <key name="autohide-tabs" type="b">
+      <default>false</default>
+      <summary>Auto-hide tabs</summary>
+      <description>Hide tab bar when only one tab is open</description>
+    </key>
+    <key name="font-size" type="i">
+      <default>11</default>
+      <summary>Font size</summary>
+      <description>Terminal font size in points</description>
+    </key>
+    <key name="scrollback-lines" type="i">
+      <default>1000</default>
+      <summary>Scrollback lines</summary>
+      <description>Number of lines to keep in terminal history</description>
+    </key>
+    <key name="mouse-autohide" type="b">
+      <default>true</default>
+      <summary>Mouse auto-hide</summary>
+      <description>Hide mouse cursor when typing</description>
+    </key>
+  </schema>
+</schemalist>

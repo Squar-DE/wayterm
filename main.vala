@@ -4,41 +4,375 @@ using Vte;
 
 public class WayTerm : Adw.Application {
     private const double FONT_WIDTH_SCALE = 0.55; // Perfect balance for text/icons
+    private Adw.TabView tab_view;
+    private Adw.ApplicationWindow window;
+    private new Adw.StyleManager style_manager;
+    private GLib.Settings settings;
     
     public WayTerm() {
         Object(application_id: "org.SquarDE.wayterm");
+        
+        // Initialize settings
+        try {
+            settings = new GLib.Settings("org.SquarDE.wayterm");
+        } catch (Error e) {
+            warning("Could not load settings: %s", e.message);
+            // Create a temporary settings object as fallback
+            var schema_source = new SettingsSchemaSource.from_directory(
+                Environment.get_current_dir(), null, false
+            );
+        }
     }
 
     public override void activate() {
-        var window = new Adw.ApplicationWindow(this) {
+        // Apply GPU acceleration settings before creating windows
+        apply_gpu_settings();
+        
+        window = new Adw.ApplicationWindow(this) {
             title = "WayTerm",
-            default_width = 800,
-            default_height = 600
+            default_width = get_int_setting("window-width", 800),
+            default_height = get_int_setting("window-height", 600)
         };
 
         // Add custom CSS class to window
-        window.get_style_context().add_class("wayterm-window");
+        window.add_css_class("wayterm-window");
 
         // Create header bar with controls
         var header = new Adw.HeaderBar() {
             title_widget = new Adw.WindowTitle("WayTerm", "")
         };
 
-        // Create terminal with perfect proportions
-        var terminal = new Vte.Terminal() {
-            scrollback_lines = 1000
+        // Add new tab button to header
+        var new_tab_button = new Gtk.Button.from_icon_name("tab-new-symbolic") {
+            tooltip_text = "New Tab (Alt+T)"
+        };
+        new_tab_button.clicked.connect(() => create_new_tab());
+        header.pack_start(new_tab_button);
+
+        // Add settings button to header
+        var settings_button = new Gtk.Button.from_icon_name("preferences-system-symbolic") {
+            tooltip_text = "Settings"
+        };
+        settings_button.clicked.connect(() => show_settings_dialog());
+        header.pack_end(settings_button);
+
+        // Create tab view
+        tab_view = new Adw.TabView() {
+            hexpand = true,
+            vexpand = true
+        };
+
+        // Connect tab view signals
+        tab_view.close_page.connect(on_tab_close);
+        tab_view.page_attached.connect(on_page_attached);
+        tab_view.page_detached.connect(on_page_detached);
+
+        // Create tab bar
+        var tab_bar = new Adw.TabBar() {
+            view = tab_view,
+            autohide = get_bool_setting("autohide-tabs", false)
+        };
+
+        // Style manager for color updates
+        style_manager = Adw.StyleManager.get_default();
+
+        // Main layout with Libadwaita styling
+        var box = new Gtk.Box(Gtk.Orientation.VERTICAL, 0);
+        box.add_css_class("wayterm-box");
+        box.append(header);
+        box.append(tab_bar);
+        box.append(tab_view);
+        
+        // Wrap everything in a ToastOverlay for notifications
+        var toast_overlay = new Adw.ToastOverlay() {
+            child = box
         };
         
-        terminal.child_exited.connect((status) => {
-          window.close();
+        // Apply custom CSS
+        load_css();
+        
+        window.content = toast_overlay;
+
+        // Set up keyboard shortcuts
+        setup_shortcuts();
+
+        // Create initial tab
+        create_new_tab();
+        
+        // Save window size on close
+        window.close_request.connect(() => {
+            int width, height;
+            window.get_default_size(out width, out height);
+            set_int_setting("window-width", width);
+            set_int_setting("window-height", height);
+            return false;
+        });
+        
+        window.present();
+    }
+
+    private void show_settings_dialog() {
+        var dialog = new Adw.PreferencesWindow() {
+            title = "Settings",
+            modal = true,
+            transient_for = window,
+            default_width = 600,
+            default_height = 500
+        };
+
+        // Track if restart is needed
+        bool restart_needed = false;
+
+        // Performance page
+        var perf_page = new Adw.PreferencesPage() {
+            title = "Performance",
+            icon_name = "applications-graphics-symbolic"
+        };
+
+        var perf_group = new Adw.PreferencesGroup() {
+            title = "Graphics Acceleration"
+        };
+
+        // GPU acceleration toggle
+        var gpu_row = new Adw.SwitchRow() {
+            title = "Hardware Acceleration",
+            subtitle = "Use GPU rendering for better performance"
+        };
+        gpu_row.active = get_bool_setting("gpu-acceleration", true);
+        gpu_row.notify["active"].connect(() => {
+            set_bool_setting("gpu-acceleration", gpu_row.active);
+            restart_needed = true;
+        });
+        perf_group.add(gpu_row);
+
+        // VSync toggle
+        var vsync_row = new Adw.SwitchRow() {
+            title = "Vertical Sync",
+            subtitle = "Synchronize rendering with display refresh rate"
+        };
+        vsync_row.active = get_bool_setting("vsync", true);
+        vsync_row.notify["active"].connect(() => {
+            set_bool_setting("vsync", vsync_row.active);
+            restart_needed = true;
+        });
+        perf_group.add(vsync_row);
+
+        perf_page.add(perf_group);
+        dialog.add(perf_page);
+
+        // Appearance page
+        var appearance_page = new Adw.PreferencesPage() {
+            title = "Appearance",
+            icon_name = "applications-graphics-symbolic"
+        };
+
+        var appearance_group = new Adw.PreferencesGroup() {
+            title = "Interface"
+        };
+
+        // Auto-hide tabs
+        var autohide_row = new Adw.SwitchRow() {
+            title = "Auto-hide Tab Bar",
+            subtitle = "Hide tab bar when only one tab is open"
+        };
+        autohide_row.active = get_bool_setting("autohide-tabs", false);
+        autohide_row.notify["active"].connect(() => {
+            set_bool_setting("autohide-tabs", autohide_row.active);
+            var tab_bar = get_tab_bar();
+            if (tab_bar != null) {
+                tab_bar.autohide = autohide_row.active;
+            }
+        });
+        appearance_group.add(autohide_row);
+
+        // Font size adjustment
+        var font_row = new Adw.SpinRow(new Gtk.Adjustment(11, 8, 24, 1, 1, 0), 1.0, 0) {
+            title = "Font Size",
+            subtitle = "Terminal font size in points"
+        };
+        font_row.value = get_int_setting("font-size", 11);
+        font_row.notify["value"].connect(() => {
+            set_int_setting("font-size", (int)font_row.value);
+            restart_needed = true;
+        });
+        appearance_group.add(font_row);
+
+        // Scrollback lines
+        var scrollback_row = new Adw.SpinRow(new Gtk.Adjustment(1000, 100, 10000, 100, 500, 0), 100.0, 0) {
+            title = "Scrollback Lines",
+            subtitle = "Number of lines to keep in terminal history"
+        };
+        scrollback_row.value = get_int_setting("scrollback-lines", 1000);
+        scrollback_row.notify["value"].connect(() => {
+            set_int_setting("scrollback-lines", (int)scrollback_row.value);
+            restart_needed = true;
+        });
+        appearance_group.add(scrollback_row);
+
+        appearance_page.add(appearance_group);
+        dialog.add(appearance_page);
+
+        // Terminal page
+        var terminal_page = new Adw.PreferencesPage() {
+            title = "Terminal",
+            icon_name = "utilities-terminal-symbolic"
+        };
+
+        var terminal_group = new Adw.PreferencesGroup() {
+            title = "Behavior"
+        };
+
+        // Mouse autohide
+        var mouse_row = new Adw.SwitchRow() {
+            title = "Auto-hide Mouse Cursor",
+            subtitle = "Hide mouse cursor when typing in terminal"
+        };
+        mouse_row.active = get_bool_setting("mouse-autohide", true);
+        mouse_row.notify["active"].connect(() => {
+            set_bool_setting("mouse-autohide", mouse_row.active);
+            restart_needed = true;
+        });
+        terminal_group.add(mouse_row);
+
+        terminal_page.add(terminal_group);
+        dialog.add(terminal_page);
+
+        // Handle dialog close to show restart notification
+        dialog.close_request.connect(() => {
+            if (restart_needed) {
+                show_restart_notification();
+            }
+            return false;
         });
 
+        dialog.present();
+    }
+
+    private void show_restart_notification() {
+        var toast = new Adw.Toast("Settings saved. Restart WayTerm to apply changes.") {
+            timeout = 5
+        };
+        
+        // Get the toast overlay (you'll need to add this to your main layout)
+        var toast_overlay = get_toast_overlay();
+        if (toast_overlay != null) {
+            toast_overlay.add_toast(toast);
+        } else {
+            // Fallback: show a simple dialog
+            var restart_dialog = new Adw.MessageDialog(window, "Settings Saved", 
+                "Please restart WayTerm to apply the changes.");
+            restart_dialog.add_response("ok", "OK");
+            restart_dialog.present();
+        }
+    }
+
+    private Adw.ToastOverlay? get_toast_overlay() {
+        // You'll need to wrap your main content in a ToastOverlay
+        // This is a helper to find it in your widget hierarchy
+        var box = window.content as Gtk.Box;
+        if (box != null) {
+            var child = box.get_first_child();
+            while (child != null) {
+                if (child is Adw.ToastOverlay) {
+                    return child as Adw.ToastOverlay;
+                }
+                child = child.get_next_sibling();
+            }
+        }
+        return null;
+    }
+
+    private Adw.TabBar? get_tab_bar() {
+        var box = window.content as Gtk.Box;
+        if (box != null) {
+            var child = box.get_first_child();
+            while (child != null) {
+                if (child is Adw.TabBar) {
+                    return child as Adw.TabBar;
+                }
+                child = child.get_next_sibling();
+            }
+        }
+        return null;
+    }
+
+    private void apply_gpu_settings() {
+        bool gpu_enabled = get_bool_setting("gpu-acceleration", true);
+        bool vsync_enabled = get_bool_setting("vsync", true);
+
+        if (gpu_enabled) {
+            // Enable GPU acceleration
+            Environment.set_variable("GSK_RENDERER", "vulkan", true);
+            // Fallback to OpenGL if Vulkan isn't available
+            if (Environment.get_variable("GSK_RENDERER") == null) {
+                Environment.set_variable("GSK_RENDERER", "gl", true);
+            }
+        } else {
+            // Force software rendering
+            Environment.set_variable("GSK_RENDERER", "cairo", true);
+        }
+
+        // VSync setting
+        if (!vsync_enabled) {
+            Environment.set_variable("vblank_mode", "0", true);
+        }
+    }
+
+    private void create_new_tab(string? title = null) {
+        // Create terminal with perfect proportions
+        var terminal = new Vte.Terminal() {
+            scrollback_lines = get_int_setting("scrollback-lines", 1000)
+        };
+
         // Enable mouse autohide
-        terminal.set_mouse_autohide(true);
+        terminal.set_mouse_autohide(get_bool_setting("mouse-autohide", true));
 
         // Add custom CSS class to terminal
-        terminal.get_style_context().add_class("wayterm-terminal");
+        terminal.add_css_class("wayterm-terminal");
 
+        // Configure terminal
+        configure_terminal(terminal);
+
+        // Handle terminal exit
+        terminal.child_exited.connect((status) => {
+            var page = get_page_for_terminal(terminal);
+            if (page != null) {
+                tab_view.close_page(page);
+            }
+        });
+
+        // Create scrolled window for terminal
+        var scrolled = new Gtk.ScrolledWindow() {
+            child = terminal,
+            hexpand = true,
+            vexpand = true
+        };
+
+        // Add tab to tab view
+        string tab_title = title ?? "Terminal";
+        var page = tab_view.add_page(scrolled, null);
+        page.title = tab_title;
+        page.icon = new ThemedIcon("utilities-terminal-symbolic");
+
+        // Set as current page
+        tab_view.selected_page = page;
+
+        // Focus the terminal
+        terminal.grab_focus();
+
+        // Spawn shell
+        spawn_shell(terminal);
+
+        // Update tab title based on terminal title changes
+        terminal.notify["window-title"].connect(() => {
+            string? window_title = terminal.window_title;
+            if (window_title != null && window_title.length > 0) {
+                page.title = window_title;
+            }
+        });
+    }
+
+    private void configure_terminal(Vte.Terminal terminal) {
         // Font settings that prevent stretching
         try {
             var font = new Pango.FontDescription();
@@ -47,8 +381,8 @@ public class WayTerm : Adw.Application {
     
             // Get the user's configured monospace font from system settings
             try {
-                var settings = new GLib.Settings("org.gnome.desktop.interface");
-                string system_monospace = settings.get_string("monospace-font-name");
+                var system_settings = new GLib.Settings("org.gnome.desktop.interface");
+                string system_monospace = system_settings.get_string("monospace-font-name");
                 if (system_monospace != "") {
                     // Parse the font string to extract family name
                     var font_desc = Pango.FontDescription.from_string(system_monospace);
@@ -64,23 +398,24 @@ public class WayTerm : Adw.Application {
             }
     
             font.set_family(font_family);
-            font.set_size(11 * Pango.SCALE);
+            font.set_size(get_int_setting("font-size", 11) * Pango.SCALE);
             font.set_stretch(Pango.Stretch.SEMI_CONDENSED);
             terminal.set_font(font);
         } catch (Error e) {
           warning("Font error: %s", e.message);
         }
+
         // Cell scaling that maintains proportions
         terminal.set_cell_height_scale(1.0);
         terminal.set_cell_width_scale(FONT_WIDTH_SCALE);
 
-        // Libadwaita color management
-        var style_manager = Adw.StyleManager.get_default();
+        // Color management
         update_terminal_colors(terminal, style_manager);
         style_manager.notify["dark"].connect(() => {
             update_terminal_colors(terminal, style_manager);
         });
         
+        // Keyboard handling
         var key_controller = new Gtk.EventControllerKey();
         key_controller.key_pressed.connect((keyval, keycode, state) => {
             // Handle Ctrl+Backspace (delete word backwards)
@@ -106,16 +441,16 @@ public class WayTerm : Adw.Application {
         });
         terminal.add_controller(key_controller);
         terminal.can_focus = true;
-        terminal.grab_focus();
+    }
 
-
+    private void spawn_shell(Vte.Terminal terminal) {
         // Wayland environment setup
         var env = Environ.get();
         env = Environ.set_variable(env, "TERM", "xterm-256color");
         env = Environ.set_variable(env, "COLORTERM", "truecolor");
         env = Environ.set_variable(env, "GDK_BACKEND", "wayland");
 
-        // Spawn shell (corrected spawn_async call with all required arguments)
+        // Spawn shell
         try {
             string? shell = Environment.get_variable("SHELL") ?? "/bin/bash";
             string[] argv = { shell };
@@ -133,24 +468,114 @@ public class WayTerm : Adw.Application {
         } catch (Error e) {
             print("Shell error: %s\n", e.message);
         }
+    }
 
-        // Main layout with Libadwaita styling
-        var box = new Gtk.Box(Gtk.Orientation.VERTICAL, 0);
-        box.get_style_context().add_class("wayterm-box");
-        box.append(header);
-        
-        var scrolled = new Gtk.ScrolledWindow() {
-            child = terminal,
-            hexpand = true,
-            vexpand = true
-        };
-        box.append(scrolled);
-        
-        // Apply custom CSS
-        load_css();
-        
-        window.content = box;
-        window.present();
+    private void setup_shortcuts() {
+        // Create shortcut controller for application-level shortcuts
+        var shortcuts = new Gtk.ShortcutController();
+        shortcuts.set_scope(Gtk.ShortcutScope.MANAGED);
+        window.add_controller(shortcuts);
+
+        // Alt+T - New tab
+        var new_tab_shortcut = new Gtk.Shortcut(
+            Gtk.ShortcutTrigger.parse_string("<Alt>t"),
+            new Gtk.CallbackAction((widget, args) => {
+                create_new_tab();
+                return true;
+            })
+        );
+        shortcuts.add_shortcut(new_tab_shortcut);
+
+        // Alt+W - Close current tab
+        var close_tab_shortcut = new Gtk.Shortcut(
+            Gtk.ShortcutTrigger.parse_string("<Alt>w"),
+            new Gtk.CallbackAction((widget, args) => {
+                if (tab_view.selected_page != null) {
+                    tab_view.close_page(tab_view.selected_page);
+                }
+                return true;
+            })
+        );
+        shortcuts.add_shortcut(close_tab_shortcut);
+
+        // Alt+Left Arrow - Previous tab
+        var prev_tab_shortcut = new Gtk.Shortcut(
+            Gtk.ShortcutTrigger.parse_string("<Alt>Left"),
+            new Gtk.CallbackAction((widget, args) => {
+                var current_pos = tab_view.get_page_position(tab_view.selected_page);
+                var n_pages = tab_view.get_n_pages();
+                if (n_pages > 1) {
+                    var prev_pos = (current_pos - 1 + n_pages) % n_pages;
+                    tab_view.selected_page = tab_view.get_nth_page(prev_pos);
+                }
+                return true;
+            })
+        );
+        shortcuts.add_shortcut(prev_tab_shortcut);
+
+        // Alt+Right Arrow - Next tab
+        var next_tab_shortcut = new Gtk.Shortcut(
+            Gtk.ShortcutTrigger.parse_string("<Alt>Right"),
+            new Gtk.CallbackAction((widget, args) => {
+                var current_pos = tab_view.get_page_position(tab_view.selected_page);
+                var n_pages = tab_view.get_n_pages();
+                if (n_pages > 1) {
+                    var next_pos = (current_pos + 1) % n_pages;
+                    tab_view.selected_page = tab_view.get_nth_page(next_pos);
+                }
+                return true;
+            })
+        );
+        shortcuts.add_shortcut(next_tab_shortcut);
+
+        // Ctrl+Comma - Settings
+        var settings_shortcut = new Gtk.Shortcut(
+            Gtk.ShortcutTrigger.parse_string("<Control>comma"),
+            new Gtk.CallbackAction((widget, args) => {
+                show_settings_dialog();
+                return true;
+            })
+        );
+        shortcuts.add_shortcut(settings_shortcut);
+    }
+
+    private bool on_tab_close(Adw.TabPage page) {
+        // If this is the last tab, close the window
+        if (tab_view.get_n_pages() <= 1) {
+            window.close();
+            return false;
+        }
+        return false; // Allow the tab to be closed
+    }
+
+    private void on_page_attached(Adw.TabPage page, int position) {
+        // Update window title when tabs change
+        update_window_title();
+    }
+
+    private void on_page_detached(Adw.TabPage page, int position) {
+        // Update window title when tabs change
+        update_window_title();
+    }
+
+    private void update_window_title() {
+        var n_pages = tab_view.get_n_pages();
+        if (n_pages == 1) {
+            window.title = "WayTerm";
+        } else {
+            window.title = "WayTerm (%d tabs)".printf(n_pages);
+        }
+    }
+
+    private Adw.TabPage? get_page_for_terminal(Vte.Terminal terminal) {
+        for (int i = 0; i < tab_view.get_n_pages(); i++) {
+            var page = tab_view.get_nth_page(i);
+            var scrolled = page.child as Gtk.ScrolledWindow;
+            if (scrolled != null && scrolled.child == terminal) {
+                return page;
+            }
+        }
+        return null;
     }
 
     private void update_terminal_colors(Vte.Terminal terminal, Adw.StyleManager style_manager) {
@@ -166,7 +591,7 @@ public class WayTerm : Adw.Application {
     private void load_css() {
         var provider = new Gtk.CssProvider();
         try {
-            provider.load_from_data((uint8[])"""
+            provider.load_from_string("""
                 .wayterm-window {
                     background-color: @window_bg_color;
                 }
@@ -177,6 +602,10 @@ public class WayTerm : Adw.Application {
                 .wayterm-box {
                     background-color: @window_bg_color;
                 }
+                .tab-button {
+                    min-width: 20px;
+                    min-height: 20px;
+                }
             """);
             
             Gtk.StyleContext.add_provider_for_display(
@@ -186,6 +615,43 @@ public class WayTerm : Adw.Application {
             );
         } catch (Error e) {
             warning("Failed to load CSS: %s", e.message);
+        }
+    }
+
+    // Settings helper methods
+    private bool get_bool_setting(string key, bool default_value) {
+        if (settings == null) return default_value;
+        try {
+            return settings.get_boolean(key);
+        } catch (Error e) {
+            return default_value;
+        }
+    }
+
+    private void set_bool_setting(string key, bool value) {
+        if (settings == null) return;
+        try {
+            settings.set_boolean(key, value);
+        } catch (Error e) {
+            warning("Could not save setting %s: %s", key, e.message);
+        }
+    }
+
+    private int get_int_setting(string key, int default_value) {
+        if (settings == null) return default_value;
+        try {
+            return settings.get_int(key);
+        } catch (Error e) {
+            return default_value;
+        }
+    }
+
+    private void set_int_setting(string key, int value) {
+        if (settings == null) return;
+        try {
+            settings.set_int(key, value);
+        } catch (Error e) {
+            warning("Could not save setting %s: %s", key, e.message);
         }
     }
 
