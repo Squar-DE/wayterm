@@ -5,6 +5,8 @@ using Vte;
 public class WayTerm : Adw.Application {
     private const double FONT_WIDTH_SCALE = 0.55; // Perfect balance for text/icons
     private Adw.TabView tab_view;
+    private KeyFile config;
+    private string config_path;
     private Adw.ApplicationWindow window;
     private new Adw.StyleManager style_manager;
     private GLib.Settings settings;
@@ -12,15 +14,21 @@ public class WayTerm : Adw.Application {
     public WayTerm() {
         Object(application_id: "org.SquarDE.wayterm");
         
-        // Initialize settings
+        // Initialize config file path
+        config_path = Path.build_filename(
+            Environment.get_user_config_dir(), 
+            "wayterm", 
+            "config.ini"
+        );
+        
+        // Load configuration
+        config = new KeyFile();
         try {
-            settings = new GLib.Settings("org.SquarDE.wayterm");
+            if (FileUtils.test(config_path, FileTest.EXISTS)) {
+                config.load_from_file(config_path, KeyFileFlags.NONE);
+            }
         } catch (Error e) {
-            warning("Could not load settings: %s", e.message);
-            // Create a temporary settings object as fallback
-            var schema_source = new SettingsSchemaSource.from_directory(
-                Environment.get_current_dir(), null, false
-            );
+            warning("Could not load config: %s", e.message);
         }
     }
 
@@ -388,7 +396,7 @@ public class WayTerm : Adw.Application {
                     var font_desc = Pango.FontDescription.from_string(system_monospace);
                     string family = font_desc.get_family();
                     if (family != null && family != "") {
-                      font_family = family + ", Symbols Nerd Font Mono, monospace";
+                      font_family = family + ", monospace";
                     }
                 }
             } catch (Error e) {
@@ -620,38 +628,50 @@ public class WayTerm : Adw.Application {
 
     // Settings helper methods
     private bool get_bool_setting(string key, bool default_value) {
-        if (settings == null) return default_value;
         try {
-            return settings.get_boolean(key);
+            return config.get_boolean("Settings", key);
         } catch (Error e) {
             return default_value;
         }
     }
 
     private void set_bool_setting(string key, bool value) {
-        if (settings == null) return;
         try {
-            settings.set_boolean(key, value);
+            config.set_boolean("Settings", key, value);
+            save_config();
         } catch (Error e) {
             warning("Could not save setting %s: %s", key, e.message);
         }
     }
 
     private int get_int_setting(string key, int default_value) {
-        if (settings == null) return default_value;
         try {
-            return settings.get_int(key);
+            return config.get_integer("Settings", key);
         } catch (Error e) {
             return default_value;
         }
     }
 
     private void set_int_setting(string key, int value) {
-        if (settings == null) return;
         try {
-            settings.set_int(key, value);
+            config.set_integer("Settings", key, value);
+            save_config();
         } catch (Error e) {
             warning("Could not save setting %s: %s", key, e.message);
+        }
+    }
+
+    private void save_config() {
+        try {
+            // Ensure config directory exists
+            var config_dir = Path.get_dirname(config_path);
+            DirUtils.create_with_parents(config_dir, 0755);
+            
+            // Save to file
+            string data = config.to_data();
+            FileUtils.set_contents(config_path, data);
+        } catch (Error e) {
+            warning("Could not save config: %s", e.message);
         }
     }
 
