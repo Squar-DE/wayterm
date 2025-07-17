@@ -1,6 +1,6 @@
 # Maintainer: Your Name <spikygames123@gmail.com>
 pkgname=wayterm-git
-pkgver=r1.0.0
+pkgver=r6.da31656
 pkgrel=1
 pkgdesc="A terminal emulator built with Vala, GTK4, and libadwaita"
 arch=('x86_64')
@@ -31,7 +31,6 @@ package() {
     # Install the binary
     install -Dm755 wayterm "$pkgdir/usr/bin/wayterm"
     
-    Install desktop file if you have one
     install -Dm644 wayterm.desktop "$pkgdir/usr/share/applications/wayterm.desktop"
     
     # Install icon if you have one
