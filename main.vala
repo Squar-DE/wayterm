@@ -9,7 +9,6 @@ public class WayTerm : Adw.Application {
     private string config_path;
     private Adw.ApplicationWindow window;
     private new Adw.StyleManager style_manager;
-    private GLib.Settings settings;
     
     public WayTerm() {
         Object(application_id: "org.SquarDE.wayterm");
@@ -393,7 +392,7 @@ public class WayTerm : Adw.Application {
             } catch (Error e) {
               // If we can't get system settings, fall back to generic monospace
               warning("Could not get system monospace font, using default: %s", e.message);
-              font_family = "monospace, Symbols Nerd Font Mono";
+              font_family = "monospace";
             }
     
             font.set_family(font_family);
@@ -744,32 +743,28 @@ public class WayTerm : Adw.Application {
 
     private void load_css() {
         var provider = new Gtk.CssProvider();
-        try {
-            provider.load_from_string("""
-                .wayterm-window {
-                    background-color: @window_bg_color;
-                }
-                .wayterm-terminal {
-                    padding: 12px;
-                    background-color: @terminal_bg_color;
-                }
-                .wayterm-box {
-                    background-color: @window_bg_color;
-                }
-                .tab-button {
-                    min-width: 20px;
-                    min-height: 20px;
-                }
-            """);
+        provider.load_from_string("""
+            .wayterm-window {
+                background-color: @window_bg_color;
+            }
+            .wayterm-terminal {
+                padding: 12px;
+                background-color: @terminal_bg_color;
+            }
+            .wayterm-box {
+                background-color: @window_bg_color;
+            }
+            .tab-button {
+                min-width: 20px;
+                min-height: 20px;
+            }
+        """);
             
-            Gtk.StyleContext.add_provider_for_display(
-                Gdk.Display.get_default(),
-                provider,
-                Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-            );
-        } catch (Error e) {
-            warning("Failed to load CSS: %s", e.message);
-        }
+        Gtk.StyleContext.add_provider_for_display(
+            Gdk.Display.get_default(),
+            provider,
+            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        );
     }
 
     // Settings helper methods
@@ -782,12 +777,8 @@ public class WayTerm : Adw.Application {
     }
 
     private void set_bool_setting(string key, bool value) {
-        try {
-            config.set_boolean("Settings", key, value);
-            save_config();
-        } catch (Error e) {
-            warning("Could not save setting %s: %s", key, e.message);
-        }
+        config.set_boolean("Settings", key, value);
+        save_config();
     }
 
     private int get_int_setting(string key, int default_value) {
@@ -799,12 +790,8 @@ public class WayTerm : Adw.Application {
     }
 
     private void set_int_setting(string key, int value) {
-        try {
-            config.set_integer("Settings", key, value);
-            save_config();
-        } catch (Error e) {
-            warning("Could not save setting %s: %s", key, e.message);
-        }
+        config.set_integer("Settings", key, value);
+        save_config();
     }
 
     private void save_config() {

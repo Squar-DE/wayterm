@@ -1,6 +1,6 @@
 # Maintainer: Your Name <spikygames123@gmail.com>
-pkgname=wayterm-git
-pkgver=r6.da31656
+pkgname=wayterm
+pkgver=r9.de172c8
 pkgrel=1
 pkgdesc="A terminal emulator built with Vala, GTK4, and libadwaita"
 arch=('x86_64')
@@ -12,6 +12,7 @@ provides=('wayterm')
 conflicts=('wayterm')
 source=('git+file://'"$PWD")
 sha256sums=('SKIP')
+pkgdesc="A minimal Wayland terminal-centric compositor (experimental)"
 
 pkgver() {
     cd "$srcdir/wayterm"
@@ -33,6 +34,7 @@ package() {
     
     install -Dm644 wayterm.desktop "$pkgdir/usr/share/applications/wayterm.desktop"
     
-    # Install icon if you have one
-    # install -Dm644 wayterm.png "$pkgdir/usr/share/pixmaps/wayterm.png"
+    # Install LICENSE
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+
 }
