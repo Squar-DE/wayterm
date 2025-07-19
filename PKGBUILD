@@ -1,6 +1,6 @@
 # Maintainer: Your Name <spikygames123@gmail.com>
 pkgname=wayterm
-pkgver=r9.de172c8
+pkgver=v0.1
 pkgrel=1
 pkgdesc="A terminal emulator built with Vala, GTK4, and libadwaita"
 arch=('x86_64')
