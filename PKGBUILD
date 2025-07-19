@@ -1,5 +1,5 @@
 # Maintainer: Your Name <spikygames123@gmail.com>
-pkgname=wayterm
+pkgname=wayterm-git
 pkgver=v0.1
 pkgrel=1
 pkgdesc="A terminal emulator built with Vala, GTK4, and libadwaita"
