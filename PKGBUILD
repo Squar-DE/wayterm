@@ -12,7 +12,7 @@ provides=('wayterm')
 conflicts=('wayterm')
 source=('git+file://'"$PWD")
 sha256sums=('SKIP')
-pkgdesc="A minimal Wayland terminal-centric compositor (experimental)"
+pkgdesc="A minimal Wayland terminal (Early Development)"
 
 pkgver() {
     cd "$srcdir/wayterm"
