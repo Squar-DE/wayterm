@@ -465,72 +465,72 @@ public class WayTerm : Adw.Application {
     }
 
     private void setup_context_menu(Vte.Terminal terminal) {
-    // Create a menu model
-    var menu = new GLib.Menu();
+        // Create a menu model
+        var menu = new GLib.Menu();
     
-    // Create sections for better organization (acts as separators)
-    var section1 = new GLib.Menu();
-    var section2 = new GLib.Menu();
+        // Create sections for better organization (acts as separators)
+        var section1 = new GLib.Menu();
+        var section2 = new GLib.Menu();
     
-    // Copy action
-    var copy_action = new GLib.SimpleAction("copy", null);
-    copy_action.activate.connect(() => copy_selection(terminal));
-    this.add_action(copy_action);
-    section1.append("Copy", "app.copy");
+        // Copy action
+        var copy_action = new GLib.SimpleAction("copy", null);
+        copy_action.activate.connect(() => copy_selection(terminal));
+        this.add_action(copy_action);
+        section1.append("Copy", "app.copy");
     
-    // Paste action  
-    var paste_action = new GLib.SimpleAction("paste", null);
-    paste_action.activate.connect(() => paste_clipboard(terminal));
-    this.add_action(paste_action);
-    section1.append("Paste", "app.paste");
+        // Paste action  
+        var paste_action = new GLib.SimpleAction("paste", null);
+        paste_action.activate.connect(() => paste_clipboard(terminal));
+        this.add_action(paste_action);
+        section1.append("Paste", "app.paste");
     
-    // Select all action
-    var select_all_action = new GLib.SimpleAction("select_all", null);
-    select_all_action.activate.connect(() => terminal.select_all());
-    this.add_action(select_all_action);
-    section2.append("Select All", "app.select_all");
+        // Select all action
+        var select_all_action = new GLib.SimpleAction("select_all", null);
+        select_all_action.activate.connect(() => terminal.select_all());
+        this.add_action(select_all_action);
+        section2.append("Select All", "app.select_all");
     
-    // Add sections to main menu
-    menu.append_section(null, section1);
-    menu.append_section(null, section2);
+        // Add sections to main menu
+        menu.append_section(null, section1);
+        menu.append_section(null, section2);
     
-    // Create popover menu
-    var context_menu = new Gtk.PopoverMenu.from_model(menu);
+        // Create popover menu
+        var context_menu = new Gtk.PopoverMenu.from_model(menu);
     
-    // Right click gesture for context menu
-    var right_click = new Gtk.GestureClick() {
-        button = Gdk.BUTTON_SECONDARY
-    };
-    
-    right_click.pressed.connect((n_press, x, y) => {
-        // Update action states
-        copy_action.set_enabled(terminal.get_has_selection());
-        
-        // Check clipboard content
-        var clipboard = terminal.get_clipboard();
-        clipboard.read_text_async.begin(null, (obj, res) => {
-            try {
-                string? text = clipboard.read_text_async.end(res);
-                paste_action.set_enabled(text != null && text.length > 0);
-            } catch (Error e) {
-                paste_action.set_enabled(false);
-            }
-        });
-        
-        // Position and show menu
-        var rect = Gdk.Rectangle() {
-            x = (int)x,
-            y = (int)y,
-            width = 1,
-            height = 1
+        // Right click gesture for context menu
+        var right_click = new Gtk.GestureClick() {
+            button = Gdk.BUTTON_SECONDARY
         };
-        context_menu.set_pointing_to(rect);
-        context_menu.set_parent(terminal);
-        context_menu.popup();
-    });
     
-    terminal.add_controller(right_click);
-}
+        right_click.pressed.connect((n_press, x, y) => {
+            // Update action states
+            copy_action.set_enabled(terminal.get_has_selection());
+        
+            // Check clipboard content
+            var clipboard = terminal.get_clipboard();
+            clipboard.read_text_async.begin(null, (obj, res) => {
+                try {
+                    string? text = clipboard.read_text_async.end(res);
+                    paste_action.set_enabled(text != null && text.length > 0);
+                } catch (Error e) {
+                    paste_action.set_enabled(false);
+                }
+            });
+        
+            // Position and show menu
+            var rect = Gdk.Rectangle() {
+                x = (int)x,
+                y = (int)y,
+                width = 1,
+                height = 1
+            };
+            context_menu.set_pointing_to(rect);
+            context_menu.set_parent(terminal);
+            context_menu.popup();
+        });
+    
+        terminal.add_controller(right_click);
+    }
     private void copy_selection(Vte.Terminal terminal) {
         if (terminal.get_has_selection()) {
             terminal.copy_clipboard_format(Vte.Format.TEXT);
